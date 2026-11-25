@@ -1,0 +1,83 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - when: never
+
+stages:
+  - build
+  - release
+
+variables:
+  INSTALLER_NAME: screen-sync-windows-x64.msi
+  PACKAGE_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/screen-sync/${CI_COMMIT_TAG}"
+
+build-windows:
+  stage: build
+  image: registry.gitlab.toxicmouse7.ru/toxicmouse7/toxmcu/rust-xwin:1
+  variables:
+    CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+    XWIN_CACHE_DIR: "$CI_PROJECT_DIR/.xwin-cache"
+    CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
+    MSI_BUILDER_VERSION: "1.2.0"
+  cache:
+    key: screen-sync-xwin
+    paths:
+      - .cargo/registry/
+      - .cargo/git/
+      - .xwin-cache/
+  script:
+    - |
+      package_id=$(cargo pkgid --locked -p screen_sync)
+      version=${package_id##*@}
+      if [ "$CI_COMMIT_TAG" != "v$version" ]; then
+        echo "Tag $CI_COMMIT_TAG must match Cargo.toml version v$version." >&2
+        exit 1
+      fi
+    - rustup target add x86_64-pc-windows-msvc
+    - cargo xwin build --release --locked --target x86_64-pc-windows-msvc
+    - |
+      case "$(uname -m)" in
+        x86_64)
+          arch=amd64
+          checksum=a691260d6a7a23df4a41a2fe2e641b1d989b1fea909c12f178d165af39a2a0d1
+          ;;
+        aarch64)
+          arch=arm64
+          checksum=5d95523546c30d4d6fa26f12eb7833b58dadc862aa5eaf5a3e70e95060818015
+          ;;
+        *) echo "Unsupported Linux runner architecture." >&2; exit 1 ;;
+      esac
+      archive="msi-builder_${MSI_BUILDER_VERSION}_linux_${arch}.tar.gz"
+      mkdir -p target/msi
+      curl --fail --silent --show-error --location \
+        --output "target/msi/$archive" \
+        "https://github.com/jkroepke/msi-builder/releases/download/v$MSI_BUILDER_VERSION/$archive"
+      printf '%s  %s\n' "$checksum" "target/msi/$archive" | sha256sum --check
+      tar -xzf "target/msi/$archive" -C target/msi msi-builder
+      target/msi/msi-builder build --var "VERSION=$version" \
+        -o "target/msi/$INSTALLER_NAME" installer.yml
+    - |
+      status=$(curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}' \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        --upload-file "target/msi/$INSTALLER_NAME" "$PACKAGE_URL/$INSTALLER_NAME")
+      if [ "$status" != 201 ]; then
+        echo "Package upload returned HTTP $status instead of 201." >&2
+        exit 1
+      fi
+
+create-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/cli:latest
+  needs: [build-windows]
+  script:
+    - echo "Creating Screen Sync release $CI_COMMIT_TAG"
+  release:
+    tag_name: '$CI_COMMIT_TAG'
+    name: 'Screen Sync $CI_COMMIT_TAG'
+    description: Windows x64 installer for Screen Sync.
+    assets:
+      links:
+        - name: Windows x64 installer (MSI)
+          url: '${PACKAGE_URL}/${INSTALLER_NAME}'
+          filepath: '/screen-sync-windows-x64.msi'
+          link_type: package

@@ -1,0 +1,31 @@
+schema: msi-builder/v1
+
+product:
+  name: Screen Sync
+  manufacturer: Aleksej Gladkov
+  version: "{{ .VERSION }}"
+  upgradeCode: d283338d-238d-40a8-ac26-da24166f9af3
+  arp:
+    icon: ScreenSync.ico
+
+package:
+  platform: x64
+  scope: perUser
+
+ui:
+  enabled: true
+
+icons:
+  ScreenSync.ico: assets/icon.ico
+
+components:
+  - files:
+      - source: target/x86_64-pc-windows-msvc/release/screen_sync.exe
+        allowUnversionedExecutable: true
+        shortcuts:
+          - name: Screen Sync
+            directory: ProgramMenuFolder
+  - files:
+      - source: LICENSE-MIT
+  - files:
+      - source: LICENSE-APACHE
