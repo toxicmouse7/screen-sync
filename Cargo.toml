@@ -7,4 +7,14 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.95"
 
 [dependencies]
-eframe = "0.36.0"
+anyhow = "1"
+eframe = { version = "0.36.0", features = ["persistence"] }
+mdns-sd = "0.21.6"
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-capture = "=2.0.1"
+windows-sys = { version = "0.61.2", features = ["Win32_NetworkManagement_IpHelper"] }
+
+[build-dependencies]
+embed-resource = "3.0.12"
