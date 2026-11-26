@@ -29,6 +29,10 @@ macro_rules! translations {
 
 translations! {
     Settings => "Настройки", "Settings";
+    #[cfg(windows)]
+    OpenWindow => "Открыть", "Open";
+    #[cfg(windows)]
+    Exit => "Выход", "Exit";
     Language => "Язык интерфейса", "Interface language";
     Done => "Готово", "Done";
     ScreenLighting => "Подсветка экрана", "Screen lighting";

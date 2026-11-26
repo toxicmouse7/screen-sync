@@ -13,8 +13,13 @@ mdns-sd = "0.21.6"
 serde = { version = "1", features = ["derive"] }
 
 [target.'cfg(windows)'.dependencies]
+tray-icon = { version = "0.25.1", default-features = false }
 windows-capture = "=2.0.1"
-windows-sys = { version = "0.61.2", features = ["Win32_NetworkManagement_IpHelper"] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Security",
+    "Win32_System_Threading",
+] }
 
 [build-dependencies]
 embed-resource = "3.0.12"

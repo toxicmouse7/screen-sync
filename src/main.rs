@@ -8,6 +8,8 @@ mod mdns;
 #[cfg(windows)]
 mod reachability;
 mod settings;
+#[cfg(windows)]
+mod tray;
 
 use std::{collections::BTreeMap, net::Ipv4Addr, time::Duration};
 
@@ -24,6 +26,8 @@ const LANGUAGE_KEY: &str = "language";
 
 struct ScreenSync {
     language: Language,
+    #[cfg(windows)]
+    tray: tray::Tray,
     preferences_open: bool,
     logo: egui::TextureHandle,
     devices: BTreeMap<Ipv4Addr, DeviceSettings>,
@@ -39,7 +43,10 @@ struct ScreenSync {
 }
 
 impl ScreenSync {
-    fn new(ctx: &eframe::CreationContext<'_>) -> Self {
+    fn new(
+        ctx: &eframe::CreationContext<'_>,
+        #[cfg(windows)] instance: &tray::Instance,
+    ) -> anyhow::Result<Self> {
         dashboard::set_style(&ctx.egui_ctx);
         let logo = eframe::icon_data::from_png_bytes(include_bytes!("../assets/monitor-light.png"))
             .expect("The bundled logo must be a valid PNG");
@@ -51,11 +58,14 @@ impl ScreenSync {
             ),
             egui::TextureOptions::LINEAR,
         );
-        Self {
-            language: ctx
-                .storage
-                .and_then(|storage| eframe::get_value(storage, LANGUAGE_KEY))
-                .unwrap_or_default(),
+        let language = ctx
+            .storage
+            .and_then(|storage| eframe::get_value(storage, LANGUAGE_KEY))
+            .unwrap_or_default();
+        Ok(Self {
+            language,
+            #[cfg(windows)]
+            tray: tray::Tray::new(&ctx.egui_ctx, instance, language)?,
             preferences_open: false,
             logo,
             devices: ctx
@@ -71,7 +81,7 @@ impl ScreenSync {
             monitor_error: None,
             captures: BTreeMap::new(),
             capture_errors: BTreeMap::new(),
-        }
+        })
     }
 
     fn show_workspace(&mut self, ui: &mut egui::Ui) {
@@ -423,27 +433,38 @@ impl ScreenSync {
                     ui.selectable_value(&mut self.language, Language::Russian, "Русский");
                     ui.selectable_value(&mut self.language, Language::English, "English");
                 });
-                if ui
-                    .add(dashboard::primary(self.language.text(Key::Done)))
-                    .clicked()
-                {
-                    ui.close();
-                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(dashboard::primary(self.language.text(Key::Done)))
+                        .clicked()
+                    {
+                        ui.close();
+                    }
+                    #[cfg(windows)]
+                    if ui.button(self.language.text(Key::Exit)).clicked() {
+                        self.tray.request_exit(ctx);
+                    }
+                });
             });
         if modal.should_close() {
             self.preferences_open = false;
         }
         if before != self.language {
+            #[cfg(windows)]
+            self.tray.set_language(self.language);
             ctx.request_repaint();
         }
     }
 }
 
 impl eframe::App for ScreenSync {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(windows)]
+        self.tray.update(ctx);
+
         #[cfg(windows)]
         self.reachability
-            .poll(ui.ctx(), self.devices.keys().copied(), |ip| {
+            .poll(ctx, self.devices.keys().copied(), |ip| {
                 self.devices.contains_key(&ip)
             });
 
@@ -457,9 +478,11 @@ impl eframe::App for ScreenSync {
             }
         });
         if !self.captures.is_empty() {
-            ui.ctx().request_repaint_after(Duration::from_millis(150));
+            ctx.request_repaint_after(Duration::from_millis(150));
         }
+    }
 
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(ui.style()).inner_margin(22))
             .show(ui, |ui| {
@@ -506,6 +529,12 @@ impl eframe::App for ScreenSync {
 }
 
 fn main() -> eframe::Result {
+    #[cfg(windows)]
+    let Some(instance) =
+        tray::Instance::acquire().map_err(|error| eframe::Error::AppCreation(error.into()))?
+    else {
+        return Ok(());
+    };
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
         .expect("The bundled icon must be a valid PNG");
     eframe::run_native(
@@ -518,6 +547,12 @@ fn main() -> eframe::Result {
                 .with_icon(icon),
             ..Default::default()
         },
-        Box::new(|ctx| Ok(Box::new(ScreenSync::new(ctx)))),
+        Box::new(|ctx| {
+            Ok(Box::new(ScreenSync::new(
+                ctx,
+                #[cfg(windows)]
+                &instance,
+            )?))
+        }),
     )
 }
