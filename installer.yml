@@ -26,6 +26,6 @@ components:
           - name: Screen Sync
             directory: ProgramMenuFolder
   - files:
-      - source: LICENSE-MIT
-  - files:
-      - source: LICENSE-APACHE
+      - source: LICENSE
+      - source: COPYING.LESSER
+      - source: COPYING
